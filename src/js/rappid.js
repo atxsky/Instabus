@@ -73,8 +73,9 @@ Rappid.prototype = {
             }.bind(this))
             .catch(CapMetroAPIError, this.rustle.bind(this))
             .catch(function(e) {
-                // FIXME: Show the error in the UI
                 console.error(e);
+                window.Raven.captureException(e);
+                window.Bugsnag.notifyException(e);
             })
             .finally(function() {
                 NProgress.done();
@@ -135,7 +136,11 @@ Rappid.prototype = {
 
         this.setupRoute(route)
             .then(this.refresh.bind(this))
-            .catch(console.error);
+            .catch(function(e) {
+                window.Raven.captureException(e);
+                window.Bugsnag.notifyException(e);
+                console.error(e);
+            });
     },
     setupRoute: function(route) {
         console.log('Setting up route', route);
@@ -225,6 +230,10 @@ Rappid.prototype = {
         if (window.location.hash.indexOf('route') === -1) {
             this.displayMap(false);
         }
+
+        window.ga('send', 'pageview', {
+         'page': location.pathname + location.search  + location.hash
+        });
     }
 };
 

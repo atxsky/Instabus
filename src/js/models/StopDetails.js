@@ -22,21 +22,19 @@ function StopDetails(routeID, directionID, stopID) {
 
 StopDetails.prototype.fetch = function() {
     var deferred = when.defer();
-    var yqlURL = 'http://query.yahooapis.com/v1/public/yql';
-    var capURL = 'http://www.capmetro.org/planner/s_nextbus2.asp?stopid=' + this.stopID();
+    var proxyURL = 'http://scenic-cedar-88515.appspot.com/';
+    var capURL = 'https://www.capmetro.org/planner/s_nextbus2.asp?stopid=' + this.stopID() + '&route=' + this.routeID();
     var params = {
-        q: 'select * from xml where url="' + capURL + '"',
-        format: 'json'
+        url: capURL,
     };
 
     this.errorMsg(null);
 
     function retryAtMost(maxRetries) {
-        requests.get(yqlURL, params)
-            .then(this.parseResponse.bind(this))
-            .tap(function(Runs) {
-                if (Runs.length > 0) {
-                    this.tripCollection = new TripCollection(this.stopID(), this.routeID(), Runs);
+        requests.get(proxyURL, params)
+            .tap(function(res) {
+                if (res.runs && res.runs.length > 0) {
+                    this.tripCollection = new TripCollection(this.stopID(), this.routeID(), res.runs);
                 }
                 else {
                     this.errorMsg("No trips available at this time.");
@@ -44,6 +42,8 @@ StopDetails.prototype.fetch = function() {
                 deferred.resolve();
             }.bind(this))
             .catch(CapMetroAPIError, function(err) {
+                window.Raven.captureException(err);
+                window.Bugsnag.notify('CapMetroAPIError', err);
                 var msg = err.message + '. Retrying ' + maxRetries + ' more times';
                 console.error(msg);
                 this.errorMsg(msg);
@@ -56,6 +56,8 @@ StopDetails.prototype.fetch = function() {
                 }
             }.bind(this))
             .catch(function(err) {
+                window.Raven.captureException(err);
+                window.Bugsnag.notifyException(err);
                 console.error(err);
                 this.errorMsg(err);
                 deferred.reject(err);
@@ -68,38 +70,6 @@ StopDetails.prototype.fetch = function() {
     retryAtMost.call(this, config.MAX_RETRIES);
 
     return deferred.promise;
-};
-
-StopDetails.prototype.parseResponse = function(res) {
-    // har de har
-    var Runs;
-
-    if (!res.query.results || !res.query.results.Envelope) {
-        throw new CapMetroAPIError('The CapMetro Stop Arrival Times API is unavailable');
-    }
-
-    if (res.query.results.Envelope.Body.Fault) {
-        var fault = res.query.results.Envelope.Body.Fault,
-            faultstring = fault.faultstring,
-            faultcode = fault.faultcode;
-
-        throw new Error(faultcode + ' ' + faultstring);
-    }
-    Runs = res.query.results.Envelope.Body.Nextbus2Response.Runs.Run;
-
-    if (!Array.isArray(Runs)) {
-        Runs = [Runs];
-    }
-
-    Runs = _.filter(Runs, function(Run) {
-        var stopDirection = utils.formatDirection(this.routeID(), this.directionID());
-        var runDirection = utils.formatDirection(Run.Route, Run.Direction);
-
-        var routeMatches = Run.Route == this.routeID() && stopDirection == runDirection;
-        return routeMatches;
-    }.bind(this));
-
-    return Runs;
 };
 
 module.exports = StopDetails;
